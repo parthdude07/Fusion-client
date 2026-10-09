@@ -18,10 +18,10 @@
   },
   "dependencies": {
     "@mantine/core": "^7.13.3",
-    "@mantine/dates": "^7.13.3",
+    "@mantine/dates": "7.17.8",
     "@mantine/form": "^7.13.3",
     "@mantine/hooks": "^7.17.8",
-    "@mantine/notifications": "^7.13.3",
+    "@mantine/notifications": "7.17.8",
     "@phosphor-icons/react": "^2.1.7",
     "@reduxjs/toolkit": "^2.2.7",
     "@tabler/icons-react": "^3.46.0",
@@ -75,5 +75,8 @@
       "eslint --fix",
       "git add"
     ]
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
   }
 }

@@ -24,6 +24,10 @@ export default defineConfig(({ mode }) => ({
     ),
   },
 
+  optimizeDeps: {
+    include: ["@mantine/dates", "@mantine/notifications"],
+  },
+
   esbuild:
     mode === "production"
       ? { pure: ["console.log", "console.debug", "console.info"] }
