@@ -171,6 +171,14 @@ export const ACADEMIC_PAGES = [
     roles: SCOPED_ADMIN_ROLES,
   },
   {
+    key: "adminSemesterTimetable",
+    slug: "semester-timetable",
+    title: "Semester Timetable",
+    icon: "Table",
+    group: "Calendar & Feedback",
+    roles: SCOPED_ADMIN_ROLES,
+  },
+  {
     key: "adminFeedbackView",
     slug: "feedback-responses",
     title: "Feedback Responses",

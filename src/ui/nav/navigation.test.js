@@ -66,7 +66,7 @@ describe("buildNavGroups", () => {
     });
     const academics = groups.find((g) => g.section === "Academics");
 
-    expect(linksOf([academics])).toHaveLength(19);
+    expect(linksOf([academics])).toHaveLength(20);
     expect(academics.items.map((i) => i.label)).toEqual([
       "Registration",
       "Course Changes",

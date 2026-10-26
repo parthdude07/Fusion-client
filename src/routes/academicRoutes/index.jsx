@@ -453,3 +453,42 @@ export const supervisorTeachingCreditListRoute = `${host}/academic-procedures/ap
 
 // Academic Office (read-only)
 export const academicOfficeTeachingCreditListRoute = `${host}/academic-procedures/api/acadadmin/teaching-credit/`;
+
+// ============================================================================
+// Whole-College Semester Timetable Generation System
+// ============================================================================
+
+// Core solver & version management
+export const timetableGenerateRoute = `${host}/academic-procedures/api/timetable/generate/`;
+export const timetableVersionsRoute = `${host}/academic-procedures/api/timetable/versions/`;
+export const timetableSlotsRoute = `${host}/academic-procedures/api/timetable/slots/`;
+export const timetableSlotOverrideRoute = `${host}/academic-procedures/api/timetable/slot/override/`;
+export const timetablePublishVersionRoute = (versionId) =>
+  `${host}/academic-procedures/api/timetable/version/${versionId}/publish/`;
+
+// Personalised schedule (WF-02)
+export const timetableMyScheduleRoute = `${host}/academic-procedures/api/timetable/my-schedule/`;
+
+// Room utilization heatmap
+export const timetableRoomUtilizationRoute = `${host}/academic-procedures/api/timetable/room-utilization/`;
+
+// Conflict diagnostics
+export const timetableConflictLogRoute = `${host}/academic-procedures/api/timetable/conflict-log/`;
+
+// Classroom CRUD
+export const timetableClassroomsRoute = `${host}/academic-procedures/api/timetable/classrooms/`;
+export const timetableClassroomDetailRoute = (roomId) =>
+  `${host}/academic-procedures/api/timetable/classrooms/${roomId}/`;
+
+// CourseWeeklyRequirement
+export const timetableWeeklyRequirementsRoute = `${host}/academic-procedures/api/timetable/weekly-requirements/`;
+
+// ElectiveBasket
+export const timetableElectiveBasketsRoute = `${host}/academic-procedures/api/timetable/elective-baskets/`;
+
+// FacultyPreference
+export const timetableFacultyPreferencesRoute = `${host}/academic-procedures/api/timetable/faculty-preferences/`;
+
+// Legacy stubs kept for backward compatibility with existing AdminSemesterTimetable refs
+export const generateTimetableRoute = timetableGenerateRoute;
+export const viewTimetableRoute = timetableSlotsRoute;
