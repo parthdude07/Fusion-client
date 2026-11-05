@@ -10,10 +10,9 @@
  *  • Generate whole-college OR-Tools CP-SAT schedule (WF-01)
  *  • Interactive 5-day grid with colour-coded slot types
  *  • Filter by version, batch, programme, branch, section
- *  • Inline slot drag-hint + override modal with real-time conflict check
+ *  • Manual slot override modal with real-time conflict checks
  *  • Version lifecycle: Draft → Publish (Dean Academic)
  *  • Room utilization heatmap tab
- *  • Classroom seeding panel
  *  • Conflict diagnostics log
  */
 
@@ -55,6 +54,7 @@ import {
   IconBolt,
 } from "@tabler/icons-react";
 import axios from "axios";
+import { useSelector } from "react-redux";
 import {
   timetableGenerateRoute,
   timetableSlotsRoute,
@@ -94,6 +94,10 @@ const STATUS_COLOR = {
   Archived: "dimmed",
   Infeasible: "red",
 };
+
+const PUBLISH_ROLES = ["Dean Academic", "Associate Dean Academic Affairs"];
+const PUBLISHABLE_STATUSES = ["Draft", "UnderReview", "Approved"];
+const EDITABLE_STATUSES = [...PUBLISHABLE_STATUSES, "Published"];
 
 const authHeaders = () => ({
   Authorization: `Token ${localStorage.getItem("authToken")}`,
@@ -180,15 +184,16 @@ const styles = {
 
 // ── Subcomponents ─────────────────────────────────────────────────────────────
 
-function SlotCell({ slot, onEdit }) {
-  if (!slot) return <td style={styles.emptyCell} />;
+function SlotCard({ slot, onEdit }) {
   const colors = SLOT_COLORS[slot.slot_type] || SLOT_COLORS.Lecture;
   return (
-    <td
+    <div
       style={{
-        ...styles.slotCell,
         background: colors.bg,
         borderLeft: `3px solid ${colors.border}`,
+        borderRadius: 4,
+        padding: "4px 6px",
+        marginBottom: 4,
       }}
     >
       <div
@@ -204,6 +209,7 @@ function SlotCell({ slot, onEdit }) {
           </Text>
           <Text size="xs" c="dimmed" style={{ fontSize: 10 }}>
             {slot.slot_type.charAt(0)} · {slot.classroom}
+            {slot.branch ? ` · ${slot.branch}` : ""}
           </Text>
           {slot.faculty && (
             <Text size="xs" c="dimmed" style={{ fontSize: 10, marginTop: 2 }}>
@@ -231,16 +237,30 @@ function SlotCell({ slot, onEdit }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SlotCell({ cellSlots, onEdit }) {
+  if (!cellSlots || cellSlots.length === 0)
+    return <td style={styles.emptyCell} />;
+  return (
+    <td style={{ ...styles.slotCell, padding: 4 }}>
+      {cellSlots.map((s) => (
+        <SlotCard key={s.id} slot={s} onEdit={onEdit} />
+      ))}
     </td>
   );
 }
 
-function TimetableGrid({ slots, onEdit }) {
-  // Build lookup: day → hour → slot
+export function TimetableGrid({ slots, onEdit }) {
+  // Build lookup: day → hour → slots[]
   const grid = {};
   slots.forEach((s) => {
     if (!grid[s.day]) grid[s.day] = {};
-    grid[s.day][parseInt(s.start_time, 10)] = s;
+    const h = parseInt(s.start_time, 10);
+    if (!grid[s.day][h]) grid[s.day][h] = [];
+    grid[s.day][h].push(s);
   });
 
   return (
@@ -257,25 +277,25 @@ function TimetableGrid({ slots, onEdit }) {
           </tr>
         </thead>
         <tbody>
-          {/* Lunch break row */}
-          <tr>
-            <td
-              colSpan={6}
-              style={{
-                textAlign: "center",
-                fontSize: 11,
-                color: "#6b7280",
-                background: "#111827",
-                padding: "4px 0",
-                fontStyle: "italic",
-              }}
-            >
-              — Lunch Break 13:00–14:00 —
-            </td>
-          </tr>
           {HOURS.map((hour) => (
             <React.Fragment key={hour}>
-              {hour === 14 && null /* lunch already shown */}
+              {hour === 14 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    style={{
+                      textAlign: "center",
+                      fontSize: 11,
+                      color: "#6b7280",
+                      background: "#111827",
+                      padding: "4px 0",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    — Lunch Break 13:00–14:00 —
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td style={styles.tdTime}>
                   <Text size="xs" c="dimmed">
@@ -285,7 +305,7 @@ function TimetableGrid({ slots, onEdit }) {
                 {[1, 2, 3, 4, 5].map((day) => (
                   <SlotCell
                     key={day}
-                    slot={grid[day]?.[hour]}
+                    cellSlots={grid[day]?.[hour]}
                     onEdit={onEdit}
                   />
                 ))}
@@ -311,20 +331,23 @@ function VersionBadge({ status }) {
 function OverrideModal({ slot, opened, onClose, onSuccess }) {
   const [newDay, setNewDay] = useState(slot?.day ?? 1);
   const [newHour, setNewHour] = useState(
-    slot ? parseInt(slot.start_time, 10) : 9,
+    slot ? parseInt(slot.block_start_time || slot.start_time, 10) : 9,
   );
   const [newRoom, setNewRoom] = useState(slot?.classroom ?? "");
-  const [lock, setLock] = useState(false);
+  const [lock, setLock] = useState(slot?.is_locked ?? false);
   const [loading, setLoading] = useState(false);
   const [conflicts, setConflicts] = useState([]);
+  const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (slot) {
       setNewDay(slot.day);
-      setNewHour(parseInt(slot.start_time, 10));
+      setNewHour(parseInt(slot.block_start_time || slot.start_time, 10));
       setNewRoom(slot.classroom);
+      setLock(slot.is_locked);
       setConflicts([]);
+      setError(null);
       setSuccess(false);
     }
   }, [slot]);
@@ -332,6 +355,7 @@ function OverrideModal({ slot, opened, onClose, onSuccess }) {
   const handleSubmit = async () => {
     setLoading(true);
     setConflicts([]);
+    setError(null);
     setSuccess(false);
     try {
       await axios.post(
@@ -350,6 +374,10 @@ function OverrideModal({ slot, opened, onClose, onSuccess }) {
     } catch (err) {
       if (err.response?.status === 409) {
         setConflicts(err.response.data.conflicts || []);
+      } else {
+        setError(
+          err.response?.data?.error || "Could not move this timetable slot.",
+        );
       }
     } finally {
       setLoading(false);
@@ -411,6 +439,11 @@ function OverrideModal({ slot, opened, onClose, onSuccess }) {
                 {c.type}: {c.detail}
               </Text>
             ))}
+          </Alert>
+        )}
+        {error && (
+          <Alert color="red" icon={<IconAlertTriangle size={16} />}>
+            {error}
           </Alert>
         )}
         {success && (
@@ -588,6 +621,8 @@ function ConflictLog({ versionId }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function AdminSemesterTimetable() {
+  const role = useSelector((state) => state.user.role);
+
   // Generation params
   const [academicYear, setAcademicYear] = useState(new Date().getFullYear());
   const [semesterType, setSemesterType] = useState("Odd Semester");
@@ -611,29 +646,43 @@ export default function AdminSemesterTimetable() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState(null);
   const [genResult, setGenResult] = useState(null);
   const [genError, setGenError] = useState(null);
   const [activeTab, setActiveTab] = useState("grid");
   const [overrideSlot, setOverrideSlot] = useState(null);
 
   // ── Fetch versions ───────────────────────────────────────────────────── //
-  const fetchVersions = useCallback(async () => {
-    setLoadingVersions(true);
-    try {
-      const res = await axios.get(timetableVersionsRoute, {
-        params: { academic_year: academicYear },
-        headers: authHeaders(),
-      });
-      const vs = res.data;
-      setVersions(vs);
-      if (vs.length && !selectedVersion) {
-        setSelectedVersion(vs[0].id);
+  const fetchVersions = useCallback(
+    async (preferredVersionId = null) => {
+      setLoadingVersions(true);
+      try {
+        const res = await axios.get(timetableVersionsRoute, {
+          params: {
+            academic_year: academicYear,
+            semester_type: semesterType,
+          },
+          headers: authHeaders(),
+        });
+        const vs = res.data;
+        setVersions(vs);
+        setSelectedVersion((currentVersion) => {
+          const preferred =
+            typeof preferredVersionId === "number"
+              ? preferredVersionId
+              : currentVersion;
+          return vs.some((version) => version.id === preferred)
+            ? preferred
+            : (vs[0]?.id ?? null);
+        });
+      } catch {
+        setVersions([]);
+        setSelectedVersion(null);
       }
-    } catch {
-      /* ignore network error, UI falls back to empty state */
-    }
-    setLoadingVersions(false);
-  }, [academicYear, selectedVersion]);
+      setLoadingVersions(false);
+    },
+    [academicYear, semesterType],
+  );
 
   // ── Fetch slots ──────────────────────────────────────────────────────── //
   const fetchSlots = useCallback(async () => {
@@ -659,10 +708,14 @@ export default function AdminSemesterTimetable() {
 
   useEffect(() => {
     fetchVersions();
-  }, [academicYear]);
+  }, [fetchVersions]);
   useEffect(() => {
-    if (selectedVersion) fetchSlots();
-  }, [selectedVersion, batch, programme, branch, section]);
+    if (selectedVersion) {
+      fetchSlots();
+    } else {
+      setSlots([]);
+    }
+  }, [selectedVersion, fetchSlots]);
 
   // ── Generate ─────────────────────────────────────────────────────────── //
   const handleGenerate = async () => {
@@ -680,7 +733,7 @@ export default function AdminSemesterTimetable() {
         { headers: authHeaders() },
       );
       setGenResult(res.data);
-      fetchVersions();
+      await fetchVersions(res.data.version_id);
     } catch (err) {
       const d = err.response?.data;
       setGenError(
@@ -695,20 +748,31 @@ export default function AdminSemesterTimetable() {
   const handlePublish = async () => {
     if (!selectedVersion) return;
     setPublishing(true);
+    setPublishError(null);
     try {
       await axios.patch(
         timetablePublishVersionRoute(selectedVersion),
         { publish_notes: "Approved via Admin Console" },
         { headers: authHeaders() },
       );
-      fetchVersions();
-    } catch {
-      /* ignore network error, UI falls back to empty state */
+      await fetchVersions(selectedVersion);
+    } catch (err) {
+      setPublishError(
+        err.response?.data?.error ||
+          "Could not publish this timetable version.",
+      );
     }
     setPublishing(false);
   };
 
   const selectedVersionObj = versions.find((v) => v.id === selectedVersion);
+  const canPublish = PUBLISH_ROLES.includes(role);
+  const selectedVersionIsPublishable = PUBLISHABLE_STATUSES.includes(
+    selectedVersionObj?.status,
+  );
+  const selectedVersionIsEditable = EDITABLE_STATUSES.includes(
+    selectedVersionObj?.status,
+  );
 
   // ── Render ────────────────────────────────────────────────────────────── //
   return (
@@ -818,7 +882,11 @@ export default function AdminSemesterTimetable() {
                 &nbsp;·&nbsp;{v.slots_created ?? "?"} slots
               </Button>
             ))}
-            <ActionIcon size="sm" variant="subtle" onClick={fetchVersions}>
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              onClick={() => fetchVersions()}
+            >
               <IconRefresh size={14} />
             </ActionIcon>
           </Group>
@@ -829,7 +897,7 @@ export default function AdminSemesterTimetable() {
                 Created:{" "}
                 {new Date(selectedVersionObj.created_at).toLocaleString()}
               </Text>
-              {selectedVersionObj.status !== "Published" && (
+              {selectedVersionIsPublishable && canPublish && (
                 <Button
                   size="xs"
                   color="green"
@@ -840,9 +908,19 @@ export default function AdminSemesterTimetable() {
                   Publish
                 </Button>
               )}
+              {selectedVersionIsPublishable && !canPublish && (
+                <Text size="xs" c="dimmed">
+                  Dean Academic approval is required to publish.
+                </Text>
+              )}
             </Group>
           )}
         </Group>
+        {publishError && (
+          <Alert mt="sm" color="red" icon={<IconAlertTriangle size={16} />}>
+            {publishError}
+          </Alert>
+        )}
       </Paper>
 
       {/* ── Slot Filters ── */}
@@ -879,7 +957,13 @@ export default function AdminSemesterTimetable() {
             onChange={setBranch}
             clearable
             size="xs"
-            data={["CSE", "ECE", "ME", "Design", "Common"]}
+            data={[
+              "CSE",
+              "ECE",
+              "ME",
+              { value: "DESIGN", label: "Design" },
+              "Common",
+            ]}
             style={{ width: 100 }}
             styles={{
               input: { ...inputStyles, padding: "4px 8px", height: 30 },
@@ -945,7 +1029,10 @@ export default function AdminSemesterTimetable() {
                 No slots to display. Generate a timetable or adjust filters.
               </Alert>
             ) : (
-              <TimetableGrid slots={slots} onEdit={setOverrideSlot} />
+              <TimetableGrid
+                slots={slots}
+                onEdit={selectedVersionIsEditable ? setOverrideSlot : undefined}
+              />
             )}
           </Paper>
         </Tabs.Panel>
@@ -1028,13 +1115,15 @@ export default function AdminSemesterTimetable() {
                           )}
                         </td>
                         <td>
-                          <ActionIcon
-                            size="xs"
-                            variant="subtle"
-                            onClick={() => setOverrideSlot(s)}
-                          >
-                            <IconEdit size={12} />
-                          </ActionIcon>
+                          {selectedVersionIsEditable && (
+                            <ActionIcon
+                              size="xs"
+                              variant="subtle"
+                              onClick={() => setOverrideSlot(s)}
+                            >
+                              <IconEdit size={12} />
+                            </ActionIcon>
+                          )}
                         </td>
                       </tr>
                     ))}

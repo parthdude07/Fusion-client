@@ -9,6 +9,11 @@ export const ACADEMIC_BASE = "/academics";
 
 const isNotUg = ({ programmeType }) => programmeType && programmeType !== "UG";
 const isUg = ({ programmeType }) => !programmeType || programmeType === "UG";
+const TIMETABLE_ADMIN_ROLES = [
+  "acadadmin",
+  "Dean Academic",
+  "Associate Dean Academic Affairs",
+];
 
 // an admin scoped to one level should not see another level's pages; acadadmin
 // has no scope and keeps everything
@@ -176,7 +181,7 @@ export const ACADEMIC_PAGES = [
     title: "Semester Timetable",
     icon: "Table",
     group: "Calendar & Feedback",
-    roles: SCOPED_ADMIN_ROLES,
+    roles: TIMETABLE_ADMIN_ROLES,
   },
   {
     key: "adminFeedbackView",
