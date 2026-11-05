@@ -69,6 +69,11 @@ import {
 
 const DAY_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const HOURS = [9, 10, 11, 12, 14, 15, 16, 17];
+const SEMESTERS_BY_TERM = {
+  "Odd Semester": [1, 3, 5, 7],
+  "Even Semester": [2, 4, 6, 8],
+  "Summer Term": [1, 2, 3, 4, 5, 6, 7, 8],
+};
 const HOUR_LABELS = {
   9: "09:00",
   10: "10:00",
@@ -412,7 +417,7 @@ function OverrideModal({ slot, opened, onClose, onSuccess }) {
           label="New Room ID"
           value={newRoom}
           onChange={(e) => setNewRoom(e.target.value)}
-          placeholder="e.g. L101"
+          placeholder="e.g. L-102"
         />
         <Group>
           <Button
@@ -469,7 +474,7 @@ function OverrideModal({ slot, opened, onClose, onSuccess }) {
 // ── Room Heatmap ─────────────────────────────────────────────────────────────
 
 function RoomHeatmap({ versionId }) {
-  const [roomId, setRoomId] = useState("L101");
+  const [roomId, setRoomId] = useState("L-102");
   const [matrix, setMatrix] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -626,6 +631,7 @@ export default function AdminSemesterTimetable() {
   // Generation params
   const [academicYear, setAcademicYear] = useState(new Date().getFullYear());
   const [semesterType, setSemesterType] = useState("Odd Semester");
+  const [semesterNumber, setSemesterNumber] = useState("3");
   const [timeout, setTimeout] = useState(60);
 
   // Version management
@@ -661,6 +667,7 @@ export default function AdminSemesterTimetable() {
           params: {
             academic_year: academicYear,
             semester_type: semesterType,
+            semester_number: Number(semesterNumber),
           },
           headers: authHeaders(),
         });
@@ -681,7 +688,7 @@ export default function AdminSemesterTimetable() {
       }
       setLoadingVersions(false);
     },
-    [academicYear, semesterType],
+    [academicYear, semesterType, semesterNumber],
   );
 
   // ── Fetch slots ──────────────────────────────────────────────────────── //
@@ -728,6 +735,8 @@ export default function AdminSemesterTimetable() {
         {
           academic_year: academicYear,
           semester_type: semesterType,
+          semester_number: Number(semesterNumber),
+          course_source: "registered",
           timeout_seconds: timeout,
         },
         { headers: authHeaders() },
@@ -766,6 +775,18 @@ export default function AdminSemesterTimetable() {
   };
 
   const selectedVersionObj = versions.find((v) => v.id === selectedVersion);
+  const semesterOptions = SEMESTERS_BY_TERM[semesterType].map((semester) => ({
+    value: String(semester),
+    label: `Semester ${semester}`,
+  }));
+  const handleSemesterTypeChange = (value) => {
+    const nextType = value || "Odd Semester";
+    const validSemesters = SEMESTERS_BY_TERM[nextType];
+    setSemesterType(nextType);
+    if (!validSemesters.includes(Number(semesterNumber))) {
+      setSemesterNumber(String(validSemesters[0]));
+    }
+  };
   const canPublish = PUBLISH_ROLES.includes(role);
   const selectedVersionIsPublishable = PUBLISHABLE_STATUSES.includes(
     selectedVersionObj?.status,
@@ -809,11 +830,20 @@ export default function AdminSemesterTimetable() {
               styles={{ input: inputStyles, label: labelStyles }}
             />
             <Select
-              label="Semester"
+              label="Term Type"
               value={semesterType}
-              onChange={setSemesterType}
+              onChange={handleSemesterTypeChange}
               data={["Odd Semester", "Even Semester", "Summer Term"]}
               style={{ width: 160 }}
+              styles={{ input: inputStyles, label: labelStyles }}
+            />
+            <Select
+              label="Semester No."
+              value={semesterNumber}
+              onChange={setSemesterNumber}
+              data={semesterOptions}
+              allowDeselect={false}
+              style={{ width: 140 }}
               styles={{ input: inputStyles, label: labelStyles }}
             />
             <NumberInput
@@ -836,6 +866,11 @@ export default function AdminSemesterTimetable() {
             </Button>
           </Group>
         </Group>
+        <Text size="xs" c="dimmed" mt="xs" ta="right">
+          Uses registered Fusion courses for Semester {semesterNumber}.
+          Practical sessions are shown as LAB until the lab-room inventory is
+          available.
+        </Text>
 
         {genResult && (
           <Alert
@@ -845,7 +880,8 @@ export default function AdminSemesterTimetable() {
             style={{ background: "#052e16" }}
           >
             <Text size="sm" c="#86efac">
-              ✔ {genResult.solver_status} · {genResult.slots_created} slots ·{" "}
+              ✔ {genResult.solver_status} · {genResult.courses_scheduled}{" "}
+              courses · {genResult.slots_created} slots ·{" "}
               {genResult.solve_time_sec}s &nbsp;(Version {genResult.version_id})
             </Text>
           </Alert>
@@ -1100,6 +1136,9 @@ export default function AdminSemesterTimetable() {
                         <td>
                           <Text size="xs" c="dimmed">
                             {s.batch} · {s.programme} · {s.branch}
+                            {s.semester_number
+                              ? ` · Semester ${s.semester_number}`
+                              : ""}
                             {s.section ? ` · ${s.section}` : ""}
                           </Text>
                         </td>
